@@ -6,6 +6,7 @@ const jwt=require('jsonwebtoken')
 // require('./db/connection.js')
 const connectionToDB=require('./db/connection')
 const Users=require('./models/User')
+const Conversation=require('./models/Conversation')
 app.use(express.json())
 app.use(express.urlencoded({extended:false}))
 
@@ -77,6 +78,34 @@ app.post('/api/login', async (req,res,next)=>{
 
             }
         }
+    }
+    catch(e){
+        console.log(e.message);
+    }
+})
+
+app.post('/api/conversation',async(req,res,next)=>{
+    try{
+        const {senderId,receiverId}=req.body
+        const newConversation=new Conversation({members:[senderId,receiverId]})
+        await newConversation.save()
+        res.status(200).send('Conversation Created successfully')
+    }
+    catch(e){
+        console.log(e.message);
+    }
+})
+
+app.get('/api/conversaion/:userId',async(req,res,next)=>{
+    try{
+        const userId=req.params.userId
+        const conversation=await Conversation.find({members:{$in:[userId]}})
+        const conversationUserData=Promise.all(conversation.map(async(conversation)=>{
+            const receiverId=conversation.members.find((member)=>member!==userId)
+            const user= await Users.findById(receiverId)
+            return {user:{email:user.email,fullName:user.fullName},conversationId:conversation._id}
+        }))
+        res.status(200).json(await conversationUserData)
     }
     catch(e){
         console.log(e.message);
