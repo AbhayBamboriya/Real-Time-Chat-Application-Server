@@ -7,6 +7,7 @@ const jwt=require('jsonwebtoken')
 const connectionToDB=require('./db/connection')
 const Users=require('./models/User')
 const Conversation=require('./models/Conversation')
+const Messages=require('./models/Messages')
 app.use(express.json())
 app.use(express.urlencoded({extended:false}))
 
@@ -111,6 +112,62 @@ app.get('/api/conversaion/:userId',async(req,res,next)=>{
         console.log(e.message);
     }
 })
+app.post('/api/message',async(req,res,next)=>{
+    try{
+        const {conversationId,senderId,message,receiverId=''}=req.body
+        if(!senderId || !message )  return res.status(200).send('Please fill all entries')
+        if(!conversationId && receiverId) {
+            const newConversation=new Conversation({members:[senderId,receiverId]})
+            await newConversation.save()
+            const newMessage=new Messages({conversationId:newConversation._id,senderId,message})
+            await newMessage.save()
+            return res.status(200).send('Message sent successfully')
+
+        }
+        else if(!conversationId && !receiverId){
+            return res.status(400).send('Please fill all entries')
+        }
+        const newMessage=new Messages({conversationId,senderId,message})
+        await newMessage.save();
+        res.status(200).send('Messages sent successfully');
+
+    }
+    catch(e){
+        console.log(e);
+    }
+})
+
+app.get('/api/message/:conversationId',async(req,res)=>{
+    try{
+        const conversationId=req.params.conversationId
+        if(conversationId) return res.status(200).json([])
+        const message=await Messages.find({conversationId})
+        const messageUserData=Promise.all(message.map(async(message)=>{
+            const user=await Users.findById(message.senderId)
+            return {user:{email:user.email,fullName:user.fullName},message:message.message}
+        }))
+        res.status(200).json(await messageUserData)
+    }
+    catch(e){
+        console.log(e);
+    }
+})
+
+
+app.get('/api/users',async(req,res,next)=>{
+    try{
+        const users=await Users.find()
+        const userData=Promise.all(users.map(async(user)=>{
+            return {user: {email:user.email,fullName:user.fullName},userId:user._id}
+        }))
+        res.status(200).json(await userData)
+    }
+    catch(e){
+        console.log(e);
+    }
+})
+
+
 app.listen(port,async()=>{
     await connectionToDB()
     console.log('listening on port ' +port);
