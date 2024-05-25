@@ -3,17 +3,20 @@ const app=express()
 const port=process.env.PORT||8000
 const bcryptjs=require('bcryptjs')
 const jwt=require('jsonwebtoken')
+const morgan=require('morgan')
 // require('./db/connection.js')
 const connectionToDB=require('./db/connection')
 const Users=require('./models/User')
 const Conversation=require('./models/Conversation')
 const Messages=require('./models/Messages')
+const cors=require('cors')
 app.use(express.json())
 app.use(express.urlencoded({extended:false}))
-
+app.use(cors())
 app.get('/',(req,res)=>{
     res.send('welcome')
 })
+app.use(morgan('dev'))
 app.post('/api/register',async (req,res,next)=>{
     try{
         const {fullName,email,password}=req.body
@@ -72,9 +75,10 @@ app.post('/api/login', async (req,res,next)=>{
                             $set:{token}
                         })
                         user.save()
-                        next()
+                        return res.status(200).json({user:{id:user._id,email:user.email,fullName:user.fullName},token:token})
+                        
                     })
-                    res.status(200).json({user:{email:user.email,fullName:user.fullName},token:user.token})
+                   
                }
 
             }
@@ -97,14 +101,15 @@ app.post('/api/conversation',async(req,res,next)=>{
     }
 })
 
-app.get('/api/conversaion/:userId',async(req,res,next)=>{
+app.get('/api/conversation/:userId',async(req,res,next)=>{
     try{
         const userId=req.params.userId
         const conversation=await Conversation.find({members:{$in:[userId]}})
+        console.log('conversation',conversation);
         const conversationUserData=Promise.all(conversation.map(async(conversation)=>{
             const receiverId=conversation.members.find((member)=>member!==userId)
             const user= await Users.findById(receiverId)
-            return {user:{email:user.email,fullName:user.fullName},conversationId:conversation._id}
+            return {user:{receiverId:user._id,email:user.email,fullName:user.fullName},conversationId:conversation._id}
         }))
         res.status(200).json(await conversationUserData)
     }
@@ -140,11 +145,16 @@ app.post('/api/message',async(req,res,next)=>{
 app.get('/api/message/:conversationId',async(req,res)=>{
     try{
         const conversationId=req.params.conversationId
-        if(conversationId) return res.status(200).json([])
+        if(!conversationId) return res.status(200).json([])
         const message=await Messages.find({conversationId})
         const messageUserData=Promise.all(message.map(async(message)=>{
+            console.log('sender id',message.senderId);
             const user=await Users.findById(message.senderId)
-            return {user:{email:user.email,fullName:user.fullName},message:message.message}
+            return {user:{id:user._id,email:user.email,fullName:user.fullName},message:message.message}
+            // return user
+            // console.log('user',user);
+            // console.log('message',message);
+            //  {(!user) return message:message.message,}
         }))
         res.status(200).json(await messageUserData)
     }
