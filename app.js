@@ -19,6 +19,7 @@ const io=require('socket.io')(8080,{
 app.use(express.json())
 app.use(express.urlencoded({extended:false}))
 app.use(cors())
+app.use(morgan('dev'))
 app.get('/',(req,res)=>{
     res.send('welcome')
 })
@@ -38,11 +39,11 @@ io.on('connection',socket=>{
     });
     socket.on('sendMessage',async({senderId,receiverId,message,conversationId})=>{
         // console.log('Userass',users);
-        const user=await Users.findById(senderId)
+      
         // console.log('Usersss',user);
         const receiver=users.find(user=>user.userId===receiverId)
         const sender=users.find(user=>user.userId===senderId)
-      
+        const user=await Users.findById(senderId)
         // console.log('sender',sender,receiver);
         if(receiver){
             io.to(receiver.socketId).to(sender.socketId).emit('getMessage',{
@@ -94,7 +95,12 @@ app.post('/api/register',async (req,res,next)=>{
                     newUser.save()
                     next();
                 })
+                
                 return res.status(200).send('User is registered Successfully')
+                // res.status(200).json({
+                //     message:'User is registered Successfully',
+                    
+                // })
             }
         }
     }
