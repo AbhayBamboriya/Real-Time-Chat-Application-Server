@@ -10,13 +10,69 @@ const Users=require('./models/User')
 const Conversation=require('./models/Conversation')
 const Messages=require('./models/Messages')
 const cors=require('cors')
+const { Socket } = require('socket.io')
+const io=require('socket.io')(8080,{
+    cors:{
+        origin:'http://localhost:3000'
+    }
+})
 app.use(express.json())
 app.use(express.urlencoded({extended:false}))
 app.use(cors())
 app.get('/',(req,res)=>{
     res.send('welcome')
 })
-app.use(morgan('dev'))
+// socket io
+let users=[]
+io.on('connection',socket=>{
+    // receivingg on backend use on 
+    console.log('user Conneced',socket.id);
+    socket.on('addUser',userId=>{
+        const isUserExist=users.find(user=>user.userId===userId)
+        if(!isUserExist){
+            const user={userId,socketId:socket.id}
+            users.push(user)
+            io.emit('getUser',users)
+        }
+        socket.userId=userId
+    });
+    socket.on('sendMessage',async({senderId,receiverId,message,conversationId})=>{
+        // console.log('Userass',users);
+        const user=await Users.findById(senderId)
+        // console.log('Usersss',user);
+        const receiver=users.find(user=>user.userId===receiverId)
+        const sender=users.find(user=>user.userId===senderId)
+      
+        // console.log('sender',sender,receiver);
+        if(receiver){
+            io.to(receiver.socketId).to(sender.socketId).emit('getMessage',{
+                senderId,
+                message,
+                conversationId,
+                receiverId,
+                user:{id:user._id,fullName:user.fullName,email:user.email}
+            })
+        }
+        // else{
+        //     io.to(sender.socketId).emit('getMessage',{
+        //         senderId,
+        //         message,
+        //         conversationId,
+        //         receiverId,
+        //         user:{id:user._id,fullName:user.fullName,email:user.email}
+        //     })
+        // }
+    })
+    // sending data from backend to frontend
+    // io.emit('getUsers',socket.userId)
+    socket.on('disconnect',()=>{
+        users=users.filter(user=>user.socketId!==socket.id)
+        // io.emit is used to send deatils from backend
+        io.emit('getUser',users)
+    })
+
+})
+// app.use(morgan('dev'))
 app.post('/api/register',async (req,res,next)=>{
     try{
         const {fullName,email,password}=req.body
@@ -105,7 +161,7 @@ app.get('/api/conversation/:userId',async(req,res,next)=>{
     try{
         const userId=req.params.userId
         const conversation=await Conversation.find({members:{$in:[userId]}})
-        console.log('conversation',conversation);
+        // console.log('conversation',conversation);
         const conversationUserData=Promise.all(conversation.map(async(conversation)=>{
             const receiverId=conversation.members.find((member)=>member!==userId)
             const user= await Users.findById(receiverId)
@@ -121,7 +177,7 @@ app.post('/api/message',async(req,res,next)=>{
     try{
         const {conversationId,senderId,message,receiverId=''}=req.body
         if(!senderId || !message )  return res.status(200).send('Please fill all entries')
-        if(!conversationId && receiverId) {
+        if(conversationId==='new' && receiverId) {
             const newConversation=new Conversation({members:[senderId,receiverId]})
             await newConversation.save()
             const newMessage=new Messages({conversationId:newConversation._id,senderId,message})
@@ -144,31 +200,45 @@ app.post('/api/message',async(req,res,next)=>{
 
 app.get('/api/message/:conversationId',async(req,res)=>{
     try{
+        const checkMessage=async(conversationId)=>{
+            const message=await Messages.find({conversationId})
+            const messageUserData=Promise.all(message.map(async(message)=>{
+                console.log('sender id',message.senderId);
+                const user=await Users.findById(message.senderId)
+                return {user:{id:user._id,email:user.email,fullName:user.fullName},message:message.message}
+                // return user
+                // console.log('user',user);
+                // console.log('message',message);
+                //  {(!user) return message:message.message,}
+            }))
+            res.status(200).json(await messageUserData)
+
+        }
         const conversationId=req.params.conversationId
-        if(!conversationId) return res.status(200).json([])
-        const message=await Messages.find({conversationId})
-        const messageUserData=Promise.all(message.map(async(message)=>{
-            console.log('sender id',message.senderId);
-            const user=await Users.findById(message.senderId)
-            return {user:{id:user._id,email:user.email,fullName:user.fullName},message:message.message}
-            // return user
-            // console.log('user',user);
-            // console.log('message',message);
-            //  {(!user) return message:message.message,}
-        }))
-        res.status(200).json(await messageUserData)
+
+        if(conversationId==='new') {
+            const checkConversation=await  Conversation.find({members:{$all:[req.query.senderId,req.query.receiverId]}})
+            if(checkConversation.length>0) checkMessage(checkConversation[0]._id)
+            else return res.status(200).json([])
+        }else{
+            checkMessage(conversationId)
+        }
+        
     }
+
     catch(e){
         console.log(e);
     }
 })
 
 
-app.get('/api/users',async(req,res,next)=>{
+app.get('/api/users/:userId',async(req,res,next)=>{
     try{
-        const users=await Users.find()
+        const userId=req.params.userId
+        // $ne=not equal to
+        const users=await Users.find({_id:{$ne:userId}})
         const userData=Promise.all(users.map(async(user)=>{
-            return {user: {email:user.email,fullName:user.fullName},userId:user._id}
+            return {user: {email:user.email,fullName:user.fullName,receiverId:user._id}}
         }))
         res.status(200).json(await userData)
     }
